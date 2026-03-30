@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Personal Lap Time Analysis</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+body{
+font-family:Arial;
+text-align:center;
+background:#f4f6f7;
+}
+
+.container{
+width:700px;
+margin:auto;
+background:white;
+padding:20px;
+border-radius:10px;
+box-shadow:0px 0px 10px rgba(0,0,0,0.2);
+}
+
+button{
+font-size:22px;
+padding:20px;
+margin:10px;
+cursor:pointer;
+}
+
+#lapButton{
+background:#2ecc71;
+color:white;
+border:none;
+border-radius:10px;
+width:300px;
+}
+
+#timer{
+font-size:40px;
+margin:20px;
+}
+
+table{
+margin:auto;
+border-collapse:collapse;
+}
+
+td,th{
+border:1px solid #ddd;
+padding:8px;
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<h1>Personal Lap Time Analysis</h1>
+
+<div id="setup">
+Runner Name<br>
+<input id="name"><br><br>
+
+Email<br>
+<input id="email"><br><br>
+
+Track Distance (m)<br>
+<input id="track" value="400"><br><br>
+
+Total Distance (m)<br>
+<input id="distance" value="2400"><br><br>
+
+<button onclick="startRun()">START RUN</button>
+</div>
+
+<div id="run" style="display:none">
+
+<h2 id="runnerName"></h2>
+
+<div id="timer">00:00</div>
+
+<h3 id="lapDisplay"></h3>
+
+<button id="lapButton" onclick="recordLap()">
+CLICK OR PRESS SPACEBAR<br>WHEN RUNNER PASSES
+</button>
+
+<h3 id="lastLap"></h3>
+
+</div>
+
+<div id="results" style="display:none">
+
+<h2>Personal Lap Time Analysis</h2>
+
+<table id="lapTable">
+<tr>
+<th>Lap</th>
+<th>Distance (m)</th>
+<th>Time (sec)</th>
+</tr>
+</table>
+
+<br>
+
+<canvas id="graph"></canvas>
+
+<h3 id="analysis"></h3>
+<h3 id="feedback"></h3>
+
+<button onclick="emailReport()">Email Report</button>
+
+</div>
+
+</div>
+
+<script>
+
+let startTime;
+let lapTimes=[];
+let lastLapTime=0;
+let laps=0;
+let totalLaps=0;
+let timerInterval;
+
+function startRun(){
+
+let track=document.getElementById("track").value;
+let distance=document.getElementById("distance").value;
+
+totalLaps=Math.round(distance/track);
+
+document.getElementById("setup").style.display="none";
+document.getElementById("run").style.display="block";
+
+document.getElementById("runnerName").innerText=document.getElementById("name").value;
+
+document.getElementById("lapDisplay").innerText="Lap 0 / "+totalLaps;
+
+startTime=Date.now();
+
+timerInterval=setInterval(updateTimer,100);
+}
+
+function updateTimer(){
+
+let elapsed=(Date.now()-startTime)/1000;
+
+let minutes=Math.floor(elapsed/60);
+let seconds=(elapsed%60).toFixed(0);
+
+document.getElementById("timer").innerText=
+minutes+":"+(seconds<10?"0":"")+seconds;
+}
+
+function recordLap(){
+
+laps++;
+
+let now=(Date.now()-startTime)/1000;
+let lapTime=now-lastLapTime;
+
+lapTimes.push(lapTime);
+
+lastLapTime=now;
+
+document.getElementById("lastLap").innerText=
+"Last Lap: "+lapTime.toFixed(2)+" sec";
+
+document.getElementById("lapDisplay").innerText=
+"Lap "+laps+" / "+totalLaps;
+
+if(laps>=totalLaps){
+finishRun();
+}
+}
+
+document.body.onkeyup=function(e){
+if(e.code==="Space") recordLap();
+}
+
+function finishRun(){
+
+clearInterval(timerInterval);
+
+document.getElementById("run").style.display="none";
+document.getElementById("results").style.display="block";
+
+let table=document.getElementById("lapTable");
+let track = parseFloat(document.getElementById("track").value);
+
+lapTimes.forEach((t,i)=>{
+let row=table.insertRow();
+row.insertCell(0).innerText=i+1;
+row.insertCell(1).innerText=track;
+row.insertCell(2).innerText=t.toFixed(2);
+});
+
+createGraph();
+analyzePacing();
+}
+
+function createGraph(){
+
+new Chart(document.getElementById("graph"),{
+type:"line",
+data:{
+labels:lapTimes.map((_,i)=>"Lap "+(i+1)),
+datasets:[{
+label:"Lap Time (sec)",
+data:lapTimes,
+fill:false
+}]
+}
+});
+}
+
+function analyzePacing(){
+
+let first=lapTimes[0];
+let last=lapTimes[lapTimes.length-1];
+
+let changes=[];
+for(let i=1;i<lapTimes.length;i++){
+changes.push(lapTimes[i]-lapTimes[i-1]);
+}
+
+let directionChanges=0;
+for(let i=1;i<changes.length;i++){
+if((changes[i]>0 && changes[i-1]<0) || (changes[i]<0 && changes[i-1]>0)){
+directionChanges++;
+}
+}
+
+let variance=Math.max(...lapTimes)-Math.min(...lapTimes);
+
+let third=Math.floor(lapTimes.length/3);
+
+let firstPart=lapTimes.slice(0,third);
+let midPart=lapTimes.slice(third,2*third);
+let lastPart=lapTimes.slice(2*third);
+
+let avg = arr => arr.reduce((a,b)=>a+b)/arr.length;
+
+let firstAvg=avg(firstPart);
+let midAvg=avg(midPart);
+let lastAvg=avg(lastPart);
+
+let description="";
+let feedback="";
+
+if(directionChanges >= 2 && variance > 5){
+
+description="Your lap times fluctuate up and down significantly, indicating inconsistent pacing control.";
+feedback="Try to lock into a steady rhythm early. Aim for a consistent lap time instead of reacting to fatigue each lap.";
+
+}else if(firstAvg < midAvg && midAvg < lastAvg){
+
+description="You started fast but gradually slowed down across the run.";
+feedback="Start slightly slower (by 3–5 seconds) and aim for even pacing throughout.";
+
+}else if(midAvg > firstAvg && midAvg > lastAvg){
+
+description="Your pace dropped in the middle laps before recovering.";
+feedback="Focus on maintaining rhythm in the middle laps. Break the run mentally into smaller segments.";
+
+}else if(lastAvg < firstAvg){
+
+description="You finished stronger than you started.";
+feedback="Great endurance. You may try starting slightly faster while maintaining this finish.";
+
+}else if(variance < 5){
+
+description="Your pacing is relatively consistent.";
+feedback="Good pacing control. Try increasing speed slightly while maintaining consistency.";
+
+}else{
+
+description="Your pacing shows some variation.";
+feedback="Aim to reduce variation by targeting a consistent lap time.";
+}
+
+document.getElementById("analysis").innerText=description;
+document.getElementById("feedback").innerText=feedback;
+
+
+// 2.4km estimation
+
+let totalTime = lapTimes.reduce((a,b)=>a+b);
+
+let track = parseFloat(document.getElementById("track").value);
+
+let distanceCovered = lapTimes.length * track;
+
+let estimatedTime = (totalTime / distanceCovered) * 2400;
+
+if(last > first){
+estimatedTime *= 1.03;
+}
+if(last < first){
+estimatedTime *= 0.98;
+}
+
+let minutes=Math.floor(estimatedTime/60);
+let seconds=Math.round(estimatedTime%60);
+
+let estimateText =
+"Estimated 2.4km Time: "+minutes+":"+(seconds<10?"0":"")+seconds;
+
+let est=document.createElement("h2");
+est.innerText=estimateText;
+
+document.getElementById("results").prepend(est);
+}
+
+function emailReport(){
+
+let name=document.getElementById("name").value;
+let email=document.getElementById("email").value;
+
+let body="Personal Lap Time Analysis\n\nRunner: "+name+"\n\n";
+
+let track = document.getElementById("track").value;
+
+lapTimes.forEach((t,i)=>{
+body+="Lap "+(i+1)+" ("+track+"m): "+t.toFixed(2)+" sec\n";
+});
+
+body+="\n"+document.getElementById("analysis").innerText;
+body+="\n"+document.getElementById("feedback").innerText;
+
+window.location.href="mailto:"+email+
+"?subject=Personal Lap Time Analysis&body="+encodeURIComponent(body);
+}
+
+</script>
+
+</body>
+</html>
